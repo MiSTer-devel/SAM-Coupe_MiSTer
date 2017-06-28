@@ -1,4 +1,4 @@
-# [SAM Coupe](https://en.wikipedia.org/wiki/SAM_Coup%C3%A9) for [MIST Board](https://github.com/mist-devel/mist-board/wiki)
+# [SAM Coupe](https://en.wikipedia.org/wiki/SAM_Coup%C3%A9) for [MiSTer](https://github.com/MiSTer-devel/Main_MiSTer/wiki)
 
 ### Features:
 - Fully functional SAM Coupe with precise CPU and Video timings.
@@ -16,13 +16,9 @@
 - Stereo SAM DAC on LPT1.
 - Mouse.
 
-**MiST firmware must be updated to release 2016-06-26 or later for correct OSD and disk functionality!**
-
 ### Installation:
-Copy the *.rbf file at the root of the SD card. You can rename the file to core.rbf if you want the MiST to load it automatically at startup.
-Copy [samcoupe.rom](https://github.com/sorgelig/SAMCoupe_MIST/tree/master/releases) file to the root of SD card.
-
-For PAL mode (RGBS output) you need to put [mist.ini](https://github.com/sorgelig/ZX_Spectrum-128K_MIST/tree/master/releases/mist.ini) file to the root of SD card. Set the option **scandoubler_disable** for desired video output.
+Copy the *.rbf file at the root of the SD card.
+Copy [samcoupe.rom](https://github.com/MiSTer-devel/SAM-Coupe_MiSTer/tree/master/releases) file to the root of SD card.
 
 ### Notes about supported formats:
 **MGT** is simple sector dump of SAM disks. All disks have the same size 819200 (for 80 track disks).
@@ -67,4 +63,4 @@ Most PC keys are mapped to the same SAM Coupe keys.
 **External RAM** enables/disables support for additional 4MB of RAM. Disabling external RAM reduces startup time of some apps. Some apps can gain advantages if this option is enabled. Actual change of this option happens upon reset.
 
 ### Download precompiled binaries and system ROMs:
-Go to [releases](https://github.com/sorgelig/SAMCoupe_MIST/tree/master/releases) folder.
+Go to [releases](https://github.com/MiSTer-devel/SAM-Coupe_MiSTer/tree/master/releases) folder.
