@@ -18,7 +18,6 @@
 
 ### Installation:
 Copy the *.rbf file at the root of the SD card.
-Copy [samcoupe.rom](https://github.com/MiSTer-devel/SAM-Coupe_MiSTer/tree/master/releases) file to the root of SD card.
 
 ### Notes about supported formats:
 **MGT** is simple sector dump of SAM disks. All disks have the same size 819200 (for 80 track disks).
