@@ -89,6 +89,8 @@ reg  [10:0] byte_addr;
 reg  [19:0] buff_a;
 reg   [1:0] wd_size_code;
 
+reg         sd_busy;
+
 wire  [7:0] buff_dout;
 reg   [1:0] sd_block = 0;
 reg         format;
@@ -100,7 +102,7 @@ generate
 
 			.address_a({sd_block, sd_buff_addr}),
 			.data_a(sd_buff_dout),
-			.wren_a(sd_buff_wr & sd_ack),
+			.wren_a(sd_buff_wr & sd_ack & sd_busy),
 			.q_a(sd_buff_din),
 
 			.address_b(scan_active ? {2'b00, scan_addr[8:0]} : byte_addr),
@@ -278,8 +280,7 @@ always @(posedge clk_sys) begin
 	reg [7:0] ra_sector;
 	reg       multisector;
 	reg       write;
-	reg [5:0] ack;
-	reg       sd_busy;
+	reg       old_ack;
 	reg       old_mounted;
 	reg [3:0] scan_state;
 	reg [1:0] scan_cnt;
@@ -328,13 +329,13 @@ always @(posedge clk_sys) begin
 		s_drq_busy <= 0;
 		watchdog_set <= 0;
 		seektimer <= 'h3FF;
-		{ack, sd_wr, sd_rd, sd_busy} <= 0;
+		{old_ack, sd_wr, sd_rd, sd_busy} <= 0;
 		ra_sector <= 1;
 	end else if(ce) begin
 
-		ack <= {ack[4:0], sd_ack};
-		if(ack[5:4] == 'b01) {sd_rd,sd_wr} <= 0;
-		if(ack[5:4] == 'b10) sd_busy <= 0;
+		old_ack <= sd_ack;
+		if(~old_ack & sd_ack) {sd_rd,sd_wr} <= 0;
+		if(old_ack & ~sd_ack) sd_busy <= 0;
 
 		if(RWMODE & scan_active) begin
 			if(scan_addr >= img_size[19:0]) scan_active <= 0;

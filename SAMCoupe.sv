@@ -108,10 +108,8 @@ localparam CONF_STR =
 {
 	"SAMCOUPE;;",
 	"-;",
-	"S,DSKMGTIMG,Drive 1;",
-	"O4,Drive 1 Write,Prohibit,Allow;",
-	"-;",
-	"F,DSKMGTIMG,Drive 2;",
+	"S0,DSKMGTIMG,Drive 1;",
+	"S1,DSKMGTIMG,Drive 2;",
 	"-;",
 	"O3,Aspect ratio,4:3,16:9;",
 	"O12,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%;",
@@ -119,7 +117,8 @@ localparam CONF_STR =
 	"O8A,CPU Speed,Normal,6MHz,9.6MHz,12MHz,24MHz;",
 	"OBC,ZX Mode Speed,Emulated,Full,Real;",
 	"O5,External RAM,on,off;",
-	"V,v1.32.",`BUILD_DATE
+	"J,Fire 1,Fire 2;",
+	"V,v1.50.",`BUILD_DATE
 };
 
 
@@ -255,15 +254,16 @@ wire        forced_scandoubler;
 wire [31:0] status;
 
 wire [31:0] sd_lba;
-wire        sd_rd;
-wire        sd_wr;
+wire  [1:0] sd_rd;
+wire  [1:0] sd_wr;
 wire        sd_ack;
 wire  [8:0] sd_buff_addr;
 wire  [7:0] sd_buff_dout;
 wire  [7:0] sd_buff_din;
 wire        sd_buff_wr;
-wire        img_mounted;
+wire  [1:0] img_mounted;
 wire [63:0] img_size;
+wire        img_readonly;
 
 wire        ioctl_wr;
 wire [24:0] ioctl_addr;
@@ -271,7 +271,7 @@ wire  [7:0] ioctl_dout;
 wire        ioctl_download;
 wire  [7:0] ioctl_index;
 
-hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
+hps_io #(.STRLEN($size(CONF_STR)>>3), .VDNUM(2)) hps_io
 (
 	.*,
 	.conf_str(CONF_STR),
@@ -346,15 +346,14 @@ end
 //////////////////   MEMORY   //////////////////
 reg  [24:0] ram_addr;
 always_comb begin
-	casex({fdd2_read, rom0_sel | rom1_sel, ext_ram, addr[15:14]})
-		'b1XX_XX: ram_addr = {3'd6, fdd2_addr};
-		'b01X_XX: ram_addr = {5'h10,addr[15], addr[13:0]};
-		'b001_X0: ram_addr = {ext_c_off,      addr[13:0]};
-		'b001_X1: ram_addr = {ext_d_off,      addr[13:0]};
-		'b000_00: ram_addr = {page_ab,        addr[13:0]};
-		'b000_01: ram_addr = {page_ab + 1'b1, addr[13:0]};
-		'b000_10: ram_addr = {page_cd,        addr[13:0]};
-		'b000_11: ram_addr = {page_cd + 1'b1, addr[13:0]};
+	casex({rom0_sel | rom1_sel, ext_ram, addr[15:14]})
+		'b1X_XX: ram_addr = {5'h10,addr[15], addr[13:0]};
+		'b01_X0: ram_addr = {ext_c_off,      addr[13:0]};
+		'b01_X1: ram_addr = {ext_d_off,      addr[13:0]};
+		'b00_00: ram_addr = {page_ab,        addr[13:0]};
+		'b00_01: ram_addr = {page_ab + 1'b1, addr[13:0]};
+		'b00_10: ram_addr = {page_cd,        addr[13:0]};
+		'b00_11: ram_addr = {page_cd + 1'b1, addr[13:0]};
 	endcase
 end
 
@@ -369,7 +368,7 @@ sdram ram
 	.dout(ram_dout),
 	.din(cpu_dout),
 	.we(~(rom0_sel | rom1_sel | ram_wp) & ~nMREQ & ~nWR & ext_ena),
-	.rd((fdd2_read | ~nMREQ) & ~nRD),
+	.rd(~nMREQ & ~nRD),
 
 	.vid_addr1(vram_addr1),
 	.vid_addr2(vram_addr2),
@@ -638,12 +637,26 @@ mouse mouse( .*, .dout(mouse_data), .rd(kbdr_sel & &addr[15:8] & nM1 & ~nIORQ & 
 
 ///////////////////   FDC   ///////////////////
 
+reg fdd_num = 0;
+always @(posedge clk_sys) begin
+	if(sd_rd[1]|sd_wr[1]) fdd_num <= 1;
+	if(sd_rd[0]|sd_wr[0]) fdd_num <= 0;
+end
+
+assign sd_buff_din = fdd_num ? fdd2_buf_dout : fdd1_buf_dout;
+assign sd_lba      = fdd_num ? fdd2_lba      : fdd1_lba;
+
+
+
 // FDD1
 wire        fdd1_busy;
 reg         fdd1_ready;
 reg         fdd1_side;
 wire        fdd1_io   = fdd_sel & ~addr[4] & ~nIORQ & nM1;
 wire  [7:0] fdd1_dout;
+wire  [7:0] fdd1_buf_dout;
+wire [31:0] fdd1_lba;
+reg         fdd1_wp;
 
 always @(posedge clk_sys) begin
 	reg old_wr;
@@ -652,10 +665,11 @@ always @(posedge clk_sys) begin
 	old_wr <= nWR;
 	if(old_wr & ~nWR & fdd1_io) fdd1_side <= addr[2];
 
-	old_mounted <= img_mounted;
+	old_mounted <= img_mounted[0];
 	if(cold_reset) fdd1_ready <= 0;
-		else if(~old_mounted & img_mounted) fdd1_ready <= 1;
+		else if(~old_mounted & img_mounted[0]) {fdd1_ready, fdd1_wp} <= {1'b1, img_readonly};
 end
+
 
 wd1793 #(1) fdd1
 (
@@ -669,18 +683,18 @@ wd1793 #(1) fdd1
 	.din(cpu_dout),
 	.dout(fdd1_dout),
 
-	.img_mounted(img_mounted),
+	.img_mounted(img_mounted[0]),
 	.img_size(img_size[19:0]),
-	.sd_lba(sd_lba),
-	.sd_rd(sd_rd),
-	.sd_wr(sd_wr),
+	.sd_lba(fdd1_lba),
+	.sd_rd(sd_rd[0]),
+	.sd_wr(sd_wr[0]),
 	.sd_ack(sd_ack),
 	.sd_buff_addr(sd_buff_addr),
 	.sd_buff_dout(sd_buff_dout),
-	.sd_buff_din(sd_buff_din),
+	.sd_buff_din(fdd1_buf_dout),
 	.sd_buff_wr(sd_buff_wr),
 
-	.wp(~status[4]),
+	.wp(fdd1_wp),
 
 	.size_code(4),
 	.layout(ioctl_index[7:6] == 2),
@@ -714,28 +728,30 @@ always @(posedge clk_sys) begin
 	end
 end
 
+
+
 // FDD2
-wire [19:0] fdd2_addr;
-wire        fdd2_rd;
 reg         fdd2_ready;
 reg         fdd2_side;
 wire        fdd2_io   = fdd_sel & addr[4] & ~nIORQ & nM1;
-wire        fdd2_read = fdd2_rd & fdd2_io;
 wire  [7:0] fdd2_dout;
+wire  [7:0] fdd2_buf_dout;
+wire [31:0] fdd2_lba;
+reg         fdd2_wp;
 
 always @(posedge clk_sys) begin
 	reg old_wr;
-	reg old_download;
+	reg old_mounted;
 
 	old_wr <= nWR;
 	if(old_wr & ~nWR & fdd2_io) fdd2_side <= addr[2];
 
-	old_download <= ioctl_download;
+	old_mounted <= img_mounted[1];
 	if(cold_reset) fdd2_ready <= 0;
-		else if(~ioctl_download & old_download & (ioctl_index[4:0] == 2)) fdd2_ready <= 1;
+		else if(~old_mounted & img_mounted[1]) {fdd2_ready, fdd2_wp} <= {1'b1, img_readonly};
 end
 
-wd1793 #(0) fdd2
+wd1793 #(1) fdd2
 (
 	.clk_sys(clk_sys),
 	.ce(cpu_n),
@@ -747,26 +763,30 @@ wd1793 #(0) fdd2
 	.din(cpu_dout),
 	.dout(fdd2_dout),
 
-	.input_active(ioctl_download & (ioctl_index[4:0] == 2)),
-	.input_addr(ioctl_addr[19:0]),
-	.input_data(ioctl_dout),
-	.input_wr(ioctl_wr),
+	.img_mounted(img_mounted[0]),
+	.img_size(img_size[19:0]),
+	.sd_lba(fdd2_lba),
+	.sd_rd(sd_rd[1]),
+	.sd_wr(sd_wr[1]),
+	.sd_ack(sd_ack),
+	.sd_buff_addr(sd_buff_addr),
+	.sd_buff_dout(sd_buff_dout),
+	.sd_buff_din(fdd2_buf_dout),
+	.sd_buff_wr(sd_buff_wr),
 
-	.buff_addr(fdd2_addr),
-	.buff_read(fdd2_rd),
-	.buff_din(ram_dout),
+	.wp(fdd2_wp),
 
 	.size_code(4),
 	.layout(ioctl_index[7:6] == 2),
 	.side(fdd2_side),
 	.ready(fdd2_ready),
-	
-	.img_mounted(0),
-	.img_size(0),
-	.sd_ack(0),
-	.sd_buff_addr(0),
-	.sd_buff_dout(0),
-	.sd_buff_wr(0)
+	.prepare(),
+
+	.input_active(0),
+	.input_addr(0),
+	.input_data(0),
+	.input_wr(0),
+	.buff_din(0)
 );
 
 endmodule
