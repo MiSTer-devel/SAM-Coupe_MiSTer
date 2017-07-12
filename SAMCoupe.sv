@@ -118,7 +118,7 @@ localparam CONF_STR =
 	"OBC,ZX Mode Speed,Emulated,Full,Real;",
 	"O5,External RAM,on,off;",
 	"J,Fire 1,Fire 2;",
-	"V,v1.50.",`BUILD_DATE
+	"V,v1.51.",`BUILD_DATE
 };
 
 
@@ -247,8 +247,8 @@ wire        ps2_kbd_data;
 wire        ps2_mouse_clk;
 wire        ps2_mouse_data;
 
-wire  [7:0] joystick_0;
-wire  [7:0] joystick_1;
+wire [15:0] joystick_0;
+wire [15:0] joystick_1;
 wire  [1:0] buttons;
 wire        forced_scandoubler;
 wire [31:0] status;
