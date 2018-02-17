@@ -1,7 +1,7 @@
 //============================================================================
 // 
-//  SAM Coupe replica for DE10-nano board
-//  Copyright (C) 2017 Sorgelig
+//  SAM Coupe replica for MiSTer
+//  Copyright (C) 2017,2018 Sorgelig
 //
 //  This program is free software; you can redistribute it and/or modify it
 //  under the terms of the GNU General Public License as published by the Free
@@ -21,46 +21,54 @@
 
 module emu
 (
-   //Master input clock
-   input         CLK_50M,
+	//Master input clock
+	input         CLK_50M,
 
 	//Async reset from top-level module.
 	//Can be used as initial reset.
 	input         RESET,
-	
+
 	//Must be passed to hps_io module
-	inout  [37:0] HPS_BUS,
+	inout  [43:0] HPS_BUS,
 
-   //Base video clock. Usually equals to CLK_SYS.
-   output        CLK_VIDEO,
+	//Base video clock. Usually equals to CLK_SYS.
+	output        CLK_VIDEO,
 
-   //Multiple resolutions are supported using different CE_PIXEL rates.
-   //Must be based on CLK_VIDEO
-   output        CE_PIXEL,
+	//Multiple resolutions are supported using different CE_PIXEL rates.
+	//Must be based on CLK_VIDEO
+	output        CE_PIXEL,
 
-   //Video aspect ratio for HDMI. Most retro systems have ratio 4:3.
-   output  [7:0] VIDEO_ARX,
-   output  [7:0] VIDEO_ARY,
+	//Video aspect ratio for HDMI. Most retro systems have ratio 4:3.
+	output  [7:0] VIDEO_ARX,
+	output  [7:0] VIDEO_ARY,
 
-   output  [7:0] VGA_R,
-   output  [7:0] VGA_G,
-   output  [7:0] VGA_B,
-   output        VGA_HS,    // positive pulse!
-   output        VGA_VS,    // positive pulse!
-   output        VGA_DE,    // = ~(VBlank | HBlank)
+	output  [7:0] VGA_R,
+	output  [7:0] VGA_G,
+	output  [7:0] VGA_B,
+	output        VGA_HS,
+	output        VGA_VS,
+	output        VGA_DE,    // = ~(VBlank | HBlank)
 
-   output        LED_USER,  // 1 - ON, 0 - OFF.
+	output        LED_USER,  // 1 - ON, 0 - OFF.
 
-	// b[1]: 0 - LED status is system status ORed with b[0]
+	// b[1]: 0 - LED status is system status OR'd with b[0]
 	//       1 - LED status is controled solely by b[0]
 	// hint: supply 2'b00 to let the system control the LED.
 	output  [1:0] LED_POWER,
 	output  [1:0] LED_DISK,
 
-   output [15:0] AUDIO_L,
-   output [15:0] AUDIO_R,
-   output        AUDIO_S, // 1 - signed audio samples, 0 - unsigned
-   input         TAPE_IN,
+	output [15:0] AUDIO_L,
+	output [15:0] AUDIO_R,
+	output        AUDIO_S, // 1 - signed audio samples, 0 - unsigned
+	output  [1:0] AUDIO_MIX, // 0 - no mix, 1 - 25%, 2 - 50%, 3 - 100% (mono)
+	input         TAPE_IN,
+
+	// SD-SPI
+	output        SD_SCK,
+	output        SD_MOSI,
+	input         SD_MISO,
+	output        SD_CS,
+	input         SD_CD,
 
 	//High latency DDR3 RAM interface
 	//Use for non-critical time purposes
@@ -76,20 +84,18 @@ module emu
 	output        DDRAM_WE,
 
 	//SDRAM interface with lower latency
-   output        SDRAM_CLK,
-   output        SDRAM_CKE,
-   output [12:0] SDRAM_A,
-   output  [1:0] SDRAM_BA,
-   inout  [15:0] SDRAM_DQ,
-   output        SDRAM_DQML,
-   output        SDRAM_DQMH,
-   output        SDRAM_nCS,
-   output        SDRAM_nCAS,
-   output        SDRAM_nRAS,
-   output        SDRAM_nWE
+	output        SDRAM_CLK,
+	output        SDRAM_CKE,
+	output [12:0] SDRAM_A,
+	output  [1:0] SDRAM_BA,
+	inout  [15:0] SDRAM_DQ,
+	output        SDRAM_DQML,
+	output        SDRAM_DQMH,
+	output        SDRAM_nCS,
+	output        SDRAM_nCAS,
+	output        SDRAM_nRAS,
+	output        SDRAM_nWE
 );
-
-assign AUDIO_S   = 0;
 
 assign LED_USER  = ioctl_download | fdd2_io;
 assign LED_DISK  = 0;
@@ -97,7 +103,8 @@ assign LED_POWER = 0;
 
 assign CLK_VIDEO = clk_sys;
 
-assign {DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE, DDRAM_CLK} = 0;
+assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = 0;
+assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 
 assign VIDEO_ARX = status[3] ? 8'd16 : 8'd4;
 assign VIDEO_ARY = status[3] ? 8'd9  : 8'd3;
@@ -114,11 +121,13 @@ localparam CONF_STR =
 	"O3,Aspect ratio,4:3,16:9;",
 	"O12,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%;",
 	"-;",
+	"O67,Stereo mix,none,25%,50%,100%;",
+	"-;",
 	"O8A,CPU Speed,Normal,6MHz,9.6MHz,12MHz,24MHz;",
 	"OBC,ZX Mode Speed,Emulated,Full,Real;",
 	"O5,External RAM,on,off;",
 	"J,Fire 1,Fire 2;",
-	"V,v1.51.",`BUILD_DATE
+	"V,v1.52.",`BUILD_DATE
 };
 
 
@@ -242,10 +251,8 @@ end
 
 
 //////////////////   MIST ARM I/O   ///////////////////
-wire        ps2_kbd_clk;
-wire        ps2_kbd_data;
-wire        ps2_mouse_clk;
-wire        ps2_mouse_data;
+wire [10:0] ps2_key;
+wire [24:0] ps2_mouse;
 
 wire [15:0] joystick_0;
 wire [15:0] joystick_1;
@@ -274,6 +281,7 @@ wire  [7:0] ioctl_index;
 hps_io #(.STRLEN($size(CONF_STR)>>3), .VDNUM(2)) hps_io
 (
 	.*,
+
 	.conf_str(CONF_STR),
 	.sd_conf(0),
 	.sd_ack_conf(),
@@ -281,6 +289,16 @@ hps_io #(.STRLEN($size(CONF_STR)>>3), .VDNUM(2)) hps_io
 	.ps2_kbd_led_status(0),
 
 	// unused
+	.RTC(),
+	.TIMESTAMP(),
+	.ps2_kbd_clk_out(),
+	.ps2_kbd_data_out(),
+	.ps2_kbd_clk_in(0),
+	.ps2_kbd_data_in(0),
+	.ps2_mouse_clk_out(),
+	.ps2_mouse_data_out(),
+	.ps2_mouse_clk_in(0),
+	.ps2_mouse_data_in(0),
 	.ioctl_wait(0),
 	.joystick_analog_0(),
 	.joystick_analog_1()
@@ -538,6 +556,7 @@ wire [18:0] aud_r = {1'b0, psg_ch_r, psg_ch_r, 2'd0} + {1'b0, ear_out, mic_out, 
 assign AUDIO_L = aud_l[18:3];
 assign AUDIO_R = aud_r[18:3];
 assign AUDIO_S = 0;
+assign AUDIO_MIX = status[7:6];
 
 
 reg [7:0] vox_l, vox_r;
