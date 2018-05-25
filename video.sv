@@ -59,6 +59,7 @@ module video
 	input   [1:0] mode3_hi,
 	input         midi_tx,
 	input         full_zx,
+	input         wide,
 
 	// Video outputs
 	output  [7:0] VGA_R,
@@ -127,10 +128,14 @@ always @(posedge clk_sys) begin
 		if(hc == 76)  HSync  <= 0;
 		if(hc == 108) HBlank <= 0;
 
-		if((vc == 236) & (hc == 28))  VBlank <= 1;
 		if( vc == 240) VSync <= 1;
 		if( vc == 244) VSync <= 0;
-		if((vc == 260) & (hc == 108)) VBlank <= 0;
+
+		if(hc == 108) begin
+			if(vc == 236) VBlank <= 1;
+			if(vc == 260) VBlank <= 0;
+			if(wide) VBlank <= !(vc < 193 || vc >= (311-4));
+		end
 
 		INT_line  <= (INT_line_no < 192) & (INT_line_no == vc) & (hc<128);
 		INT_frame <= (vc == 244) & (hc<128);

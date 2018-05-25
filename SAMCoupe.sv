@@ -106,8 +106,8 @@ assign CLK_VIDEO = clk_sys;
 assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = 0;
 assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 
-assign VIDEO_ARX = status[3] ? 8'd16 : 8'd4;
-assign VIDEO_ARY = status[3] ? 8'd9  : 8'd3;
+assign VIDEO_ARX = status[4:3] ? 8'd16 : 8'd4;
+assign VIDEO_ARY = status[4:3] ? 8'd9  : 8'd3;
 
 
 `include "build_id.v"
@@ -118,7 +118,7 @@ localparam CONF_STR =
 	"S0,DSKMGTIMG,Drive 1;",
 	"S1,DSKMGTIMG,Drive 2;",
 	"-;",
-	"O3,Aspect ratio,4:3,16:9;",
+	"O34,Aspect ratio,Original,Wide,Zoom;",
 	"O12,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%;",
 	"-;",
 	"O67,Stereo mix,none,25%,50%,100%;",
@@ -127,7 +127,7 @@ localparam CONF_STR =
 	"OBC,ZX Mode Speed,Emulated,Full,Real;",
 	"O5,External RAM,on,off;",
 	"J,Fire 1,Fire 2;",
-	"V,v1.52.",`BUILD_DATE
+	"V,v1.55.",`BUILD_DATE
 };
 
 
@@ -289,6 +289,7 @@ hps_io #(.STRLEN($size(CONF_STR)>>3), .VDNUM(2)) hps_io
 	.ps2_kbd_led_status(0),
 
 	// unused
+	.new_vmode(0),
 	.RTC(),
 	.TIMESTAMP(),
 	.ps2_kbd_clk_out(),
@@ -632,6 +633,7 @@ video video
 	.ce_pix(CE_PIXEL),
 	.full_zx(status[12:11] == 1),
 	.scale(status[2:1]),
+	.wide(status[4]),
 	.din(cpu_dout),
 	.dout(vid_dout),
 	.dout_en(vid_sel)
