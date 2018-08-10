@@ -316,12 +316,14 @@ wire        nIORQ;
 wire        nRD;
 wire        nWR;
 wire        nRFSH;
-wire        nINT   = ~(INT_line | INT_frame | INT_midi);
+reg         nINT;
 wire        reset  = buttons[1] | status[0] | cold_reset | warm_reset;
 wire        cold_reset = (mod[1] & Fn[11]) | init_reset;
 wire        warm_reset =  mod[2] & Fn[11];
 wire        port_we    = ~nIORQ & ~nWR & nM1;
 wire        port_rd    = ~nIORQ & ~nRD & nM1;
+
+always @(posedge clk_sys) if(ce_cpu_p) nINT <= ~(INT_line | INT_frame | INT_midi);
 
 T80pa cpu
 (
@@ -777,14 +779,14 @@ wd1793 #(1) fdd2
 	.clk_sys(clk_sys),
 	.ce(cpu_n),
 	.reset(reset),
-	.io_en(fdd2_io),
+	.io_en(fdd2_io & fdd2_ready),
 	.rd(~nRD),
 	.wr(~nWR),
 	.addr(addr[1:0]),
 	.din(cpu_dout),
 	.dout(fdd2_dout),
 
-	.img_mounted(img_mounted[0]),
+	.img_mounted(img_mounted[1]),
 	.img_size(img_size[19:0]),
 	.sd_lba(fdd2_lba),
 	.sd_rd(sd_rd[1]),
@@ -801,7 +803,6 @@ wd1793 #(1) fdd2
 	.layout(ioctl_index[7:6] == 2),
 	.side(fdd2_side),
 	.ready(fdd2_ready),
-	.prepare(),
 
 	.input_active(0),
 	.input_addr(0),
