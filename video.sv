@@ -52,8 +52,8 @@ module video
 
 	// Misc. signals
 	input   [3:0] border_color,
-	input   [1:0] scale,
-	input         forced_scandoubler,
+	input         hq2x,
+	input         scandoubler,
 	input         soff,
 	output  [1:0] video_mode,
 	input   [1:0] mode3_hi,
@@ -191,16 +191,13 @@ wire I;
 wire [1:0] R, G, B;
 assign {G[1],R[1],B[1],I,G[0],R[0],B[0]} = (HBlank | VBlank | soff) ? 7'b0 : clut[index];
 
-wire hq2x = (scale==1);
 video_mixer #(.LINE_LENGTH(768), .HALF_DEPTH(1)) video_mixer
 (
 	.*,
 	.ce_pix(ce_6mp | (mode512 & ce_6mn)),
 	.ce_pix_out(ce_pix),
 
-	.scanlines({scale==3,scale==2}),
-	.scandoubler(scale || forced_scandoubler),
-
+	.scanlines(0),
 	.mono(0),
 
 	.R({R, R[1], I}),
