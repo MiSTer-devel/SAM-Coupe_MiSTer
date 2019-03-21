@@ -1,7 +1,7 @@
 //============================================================================
 // 
 //  SAA1099 sound generator
-//  Copyright (C) 2016 Sorgelig
+//  Copyright (C) 2016-2019 Sorgelig
 //
 //  Based on SAA1099.v code from Miguel Angel Rodriguez Jodar
 //  Based on SAASound code  from Dave Hooper
@@ -173,7 +173,7 @@ module saa1099_triplet
 
 wire       tone0, tone1, tone2, noise;
 wire       pulse_noise, pulse_envelope;
-wire[21:0] out0, out1, out2;
+wire[17:0] out0, out1, out2;
 
 saa1099_tone  freq_gen0(.*, .out(tone0), .octave(octave[0]), .freq(freq[0]), .pulse(pulse_noise));
 saa1099_tone  freq_gen1(.*, .out(tone1), .octave(octave[1]), .freq(freq[1]), .pulse(pulse_envelope));
@@ -184,8 +184,8 @@ saa1099_amp amp0(.*, .mixmode({noise_en[0], freq_en[0]}), .tone(tone0), .envreg(
 saa1099_amp amp1(.*, .mixmode({noise_en[1], freq_en[1]}), .tone(tone1), .envreg(0),   .vol(vol[1]), .out(out1));
 saa1099_amp amp2(.*, .mixmode({noise_en[2], freq_en[2]}), .tone(tone2), .envreg(env), .vol(vol[2]), .out(out2));
 
-assign out[10:0]  = out0[8:0]  + out1[8:0]  + out2[8:0];
-assign out[21:11] = out0[17:9] + out1[17:9] + out2[17:9];
+assign out[10:0]  = {2'b00, out0[8:0] } + {2'b00, out1[8:0] } + {2'b00, out2[8:0] };
+assign out[21:11] = {2'b00, out0[17:9]} + {2'b00, out1[17:9]} + {2'b00, out2[17:9]};
 
 endmodule
 
