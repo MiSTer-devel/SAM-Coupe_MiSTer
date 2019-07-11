@@ -4,7 +4,7 @@
 // Static RAM controller implementation using SDRAM MT48LC16M16A2
 // Customized version for SAMCoupe.
 //
-// Copyright (c) 2015,2016 Sorgelig
+// Copyright (c) 2015-2019 Sorgelig
 //
 // Some parts of SDRAM code used from project:
 // http://hamsterworks.co.nz/mediawiki/index.php/Simple_SDRAM_Controller
@@ -68,7 +68,8 @@ assign SDRAM_nCS  = command[3];
 assign SDRAM_nRAS = command[2];
 assign SDRAM_nCAS = command[1];
 assign SDRAM_nWE  = command[0];
-assign SDRAM_CKE  = cke;
+assign SDRAM_CKE  = 1;
+assign {SDRAM_DQMH,SDRAM_DQML} = SDRAM_A[12:11];
 
 // no burst configured
 localparam BURST_LENGTH        = 3'b000;   // 000=1, 001=2, 010=4, 011=8
@@ -95,7 +96,6 @@ localparam CMD_LOAD_MODE       = 4'b0000;
 
 reg [13:0] refresh_count = startup_refresh_max - sdram_startup_cycles;
 reg  [3:0] command = CMD_INHIBIT;
-reg        cke     = 0;
 reg [24:0] save_addr;
 reg [15:0] data;
 
@@ -159,6 +159,8 @@ always @(posedge clk) begin
 			else ram_busy <= 1;
 	end
 
+	SDRAM_DQ   <= 16'bZZZZZZZZZZZZZZZZ;
+
 	case(state)
 		STATE_STARTUP: begin
 			//------------------------------------------------------------------------
@@ -179,10 +181,6 @@ always @(posedge clk) begin
 			//--  * LOAD_MODE_REG 
 			//--  * 2 cycles wait
 			//------------------------------------------------------------------------
-			cke        <= 1;
-			SDRAM_DQ   <= 16'bZZZZZZZZZZZZZZZZ;
-			SDRAM_DQML <= 1;
-			SDRAM_DQMH <= 1;
 			SDRAM_A    <= 0;
 			SDRAM_BA   <= 0;
 
@@ -220,10 +218,7 @@ always @(posedge clk) begin
 		STATE_IDLE_4: state <= STATE_IDLE_3;
 		STATE_IDLE_3: state <= STATE_IDLE_2;
 		STATE_IDLE_2: state <= STATE_IDLE_1;
-		STATE_IDLE_1: begin
-			SDRAM_DQ   <= 16'bZZZZZZZZZZZZZZZZ;
-			state      <= STATE_IDLE;
-		end
+		STATE_IDLE_1: state <= STATE_IDLE;
 
 		STATE_IDLE: begin
 			if((~old_we & we) | (~old_rd & rd & ((cache_addr[24:1] != addr[24:1]) | cache_we)) | ram_busy) begin
@@ -276,18 +271,18 @@ always @(posedge clk) begin
 		end
 
 		// ACTIVE-to-READ or WRITE delay >20ns (-75)
-		STATE_OPEN_1: state <= STATE_OPEN_2;
+		STATE_OPEN_1: begin
+			SDRAM_A     <= '1;
+			state       <= STATE_OPEN_2;
+		end
 		STATE_OPEN_2: begin
-			SDRAM_A     <= {4'b0010, save_addr[22:14]}; 
-			SDRAM_DQML  <= save_we &  save_addr[0];
-			SDRAM_DQMH  <= save_we & ~save_addr[0];
+			SDRAM_A     <= {save_we & ~save_addr[0], save_we &  save_addr[0], 2'b10, save_addr[22:14]};
 			state       <= save_we ? STATE_WRITE : STATE_READ;
 		end
 
 		STATE_READ: begin
 			state       <= STATE_IDLE_5;
 			command     <= CMD_READ;
-			SDRAM_DQ    <= 16'bZZZZZZZZZZZZZZZZ;
 
 			// Schedule reading the data values off the bus
 			data_ready_delay[CAS_LATENCY] <= 1;
