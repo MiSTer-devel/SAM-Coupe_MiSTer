@@ -124,12 +124,13 @@ always @(posedge clk_sys) begin
 	end
 	if(ce_6mn) begin
 		if(hc == 28)  HBlank <= 1;
-		if(hc == 44)  HSync  <= 1;
+		if(hc == 44)  begin
+			HSync  <= 1;
+			if( vc == 240) VSync <= 1;
+			if( vc == 244) VSync <= 0;
+		end
 		if(hc == 76)  HSync  <= 0;
 		if(hc == 108) HBlank <= 0;
-
-		if( vc == 240) VSync <= 1;
-		if( vc == 244) VSync <= 0;
 
 		if(hc == 108) begin
 			if(vc == 236) VBlank <= 1;
