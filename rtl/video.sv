@@ -54,6 +54,7 @@ module video
 	input   [3:0] border_color,
 	input         hq2x,
 	input         scandoubler,
+	inout  [21:0] gamma_bus,
 	input         soff,
 	output  [1:0] video_mode,
 	input   [1:0] mode3_hi,
@@ -192,9 +193,10 @@ wire I;
 wire [1:0] R, G, B;
 assign {G[1],R[1],B[1],I,G[0],R[0],B[0]} = (HBlank | VBlank | soff) ? 7'b0 : clut[index];
 
-video_mixer #(.LINE_LENGTH(768), .HALF_DEPTH(1)) video_mixer
+video_mixer #(.LINE_LENGTH(768), .HALF_DEPTH(1), .GAMMA(1)) video_mixer
 (
 	.*,
+	.clk_vid(clk_sys),
 	.ce_pix(ce_6mp | (mode512 & ce_6mn)),
 	.ce_pix_out(ce_pix),
 

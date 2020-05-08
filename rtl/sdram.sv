@@ -43,6 +43,7 @@ module sdram
 	output            SDRAM_nRAS,  // row address select
 	output            SDRAM_nCAS,  // columns address select
 	output            SDRAM_CKE,   // clock enable
+	output            SDRAM_CLK,
 
 	input      [24:0] addr,
 	output reg  [7:0] dout,
@@ -102,7 +103,7 @@ reg [15:0] data;
 typedef enum
 {
 	STATE_STARTUP,
-	STATE_OPEN_1, STATE_OPEN_2,
+	STATE_OPEN_1,
 	STATE_WRITE,
 	STATE_READ,
 	STATE_IDLE,	  STATE_IDLE_1, STATE_IDLE_2, STATE_IDLE_3,
@@ -112,7 +113,7 @@ typedef enum
 reg  [2:0] cli;
 
 always @(posedge clk) begin
-	reg [CAS_LATENCY:0] data_ready_delay;
+	reg [CAS_LATENCY+1:0] data_ready_delay;
 
 	reg        old_we, old_rd, old_we2, old_rd2;
 	reg [24:0] old_addr1, old_addr2, old_addr3;
@@ -121,6 +122,7 @@ always @(posedge clk) begin
 	reg        refresh = 0;
 	reg        cache_we = 1;
 	reg [15:0] cache_data;
+	reg [15:0] ram_data;
 	reg [24:0] cache_addr;
 
 	state_t state = STATE_STARTUP;
@@ -128,7 +130,7 @@ always @(posedge clk) begin
 	command <= CMD_NOP;
 	refresh_count  <= refresh_count+1'b1;
 
-	data_ready_delay <= {1'b0, data_ready_delay[CAS_LATENCY:1]};
+	data_ready_delay <= data_ready_delay >> 1;
 
 	if(data_ready_delay[1]) begin
 		case(cli)
@@ -138,12 +140,14 @@ always @(posedge clk) begin
 		endcase
 	end
 
+	if(data_ready_delay[1]) ram_data <= SDRAM_DQ;
+	
 	if(data_ready_delay[0]) begin
 		case(cli)
-			0: begin dout <= save_addr[0] ?  SDRAM_DQ[15:8] : SDRAM_DQ[7:0]; cache_data <= SDRAM_DQ; end
-			1: vid_data1  <= save_addr[0] ? {SDRAM_DQ[7:0], SDRAM_DQ[15:8]} : {SDRAM_DQ[15:8], SDRAM_DQ[7:0]};
-			2: vid_data2  <= save_addr[0] ? {SDRAM_DQ[7:0], SDRAM_DQ[15:8]} : {SDRAM_DQ[15:8], SDRAM_DQ[7:0]};
-			3: misc_dout  <= save_addr[0] ?  SDRAM_DQ[15:8] : SDRAM_DQ[7:0];
+			0: begin dout <= save_addr[0] ?  ram_data[15:8] : ram_data[7:0]; cache_data <= ram_data; end
+			1: vid_data1  <= save_addr[0] ? {ram_data[7:0], ram_data[15:8]} : {ram_data[15:8], ram_data[7:0]};
+			2: vid_data2  <= save_addr[0] ? {ram_data[7:0], ram_data[15:8]} : {ram_data[15:8], ram_data[7:0]};
+			3: misc_dout  <= save_addr[0] ?  ram_data[15:8] : ram_data[7:0];
 			default: ;
 		endcase
 	end
@@ -270,12 +274,7 @@ always @(posedge clk) begin
 			end
 		end
 
-		// ACTIVE-to-READ or WRITE delay >20ns (-75)
 		STATE_OPEN_1: begin
-			SDRAM_A     <= '1;
-			state       <= STATE_OPEN_2;
-		end
-		STATE_OPEN_2: begin
 			SDRAM_A     <= {save_we & ~save_addr[0], save_we &  save_addr[0], 2'b10, save_addr[22:14]};
 			state       <= save_we ? STATE_WRITE : STATE_READ;
 		end
@@ -283,13 +282,11 @@ always @(posedge clk) begin
 		STATE_READ: begin
 			state       <= STATE_IDLE_5;
 			command     <= CMD_READ;
-
-			// Schedule reading the data values off the bus
-			data_ready_delay[CAS_LATENCY] <= 1;
+			data_ready_delay[CAS_LATENCY+1] <= 1;
 		end
 
 		STATE_WRITE: begin
-			state       <= STATE_IDLE_5;
+			state       <= STATE_IDLE_2;
 			command     <= CMD_WRITE;
 			SDRAM_DQ    <= {save_data, save_data};
 			if(cli == 3) misc_busy <= 0;
@@ -302,5 +299,30 @@ always @(posedge clk) begin
 		refresh_count <= startup_refresh_max - sdram_startup_cycles;
 	end
 end
+
+altddio_out
+#(
+	.extend_oe_disable("OFF"),
+	.intended_device_family("Cyclone V"),
+	.invert_output("OFF"),
+	.lpm_hint("UNUSED"),
+	.lpm_type("altddio_out"),
+	.oe_reg("UNREGISTERED"),
+	.power_up_high("OFF"),
+	.width(1)
+)
+sdramclk_ddr
+(
+	.datain_h(1'b0),
+	.datain_l(1'b1),
+	.outclock(clk),
+	.dataout(SDRAM_CLK),
+	.aclr(1'b0),
+	.aset(1'b0),
+	.oe(1'b1),
+	.outclocken(1'b1),
+	.sclr(1'b0),
+	.sset(1'b0)
+);
 
 endmodule
