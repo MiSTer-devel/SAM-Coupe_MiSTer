@@ -408,16 +408,15 @@ end
 
 
 //////////////////   MEMORY   //////////////////
-reg  [24:0] ram_addr;
+wire [8:0] ram_page;
 always_comb begin
-	casex({rom0_sel | rom1_sel, ext_ram, addr[15:14]})
-		'b1X_XX: ram_addr = {5'h10,addr[15], addr[13:0]};
-		'b01_X0: ram_addr = {ext_c_off,      addr[13:0]};
-		'b01_X1: ram_addr = {ext_d_off,      addr[13:0]};
-		'b00_00: ram_addr = {page_ab,        addr[13:0]};
-		'b00_01: ram_addr = {page_ab + 1'b1, addr[13:0]};
-		'b00_10: ram_addr = {page_cd,        addr[13:0]};
-		'b00_11: ram_addr = {page_cd + 1'b1, addr[13:0]};
+	casex({ext_ram, addr[15:14]})
+		'b1_X0: ram_page = {    1'b1, ext_c };
+		'b1_X1: ram_page = {    1'b1, ext_d };
+		'b0_00: ram_page = { page_ab,       };
+		'b0_01: ram_page = { page_ab + 1'b1 };
+		'b0_10: ram_page = { page_cd,       };
+		'b0_11: ram_page = { page_cd + 1'b1 };
 	endcase
 end
 
@@ -428,23 +427,17 @@ sdram ram
 	.*,
 	.init(~locked),
 	.clk(clk_sys),
-	.addr(ram_addr),
+	.addr({ram_page, addr[13:0]}),
 	.dout(ram_dout),
 	.din(cpu_dout),
 	.we(~(rom0_sel | rom1_sel | ram_wp) & ~nMREQ & ~nWR & ext_ena),
-	.rd(~nMREQ & ~nRD),
+	.rd(~(rom0_sel | rom1_sel ) & ~nMREQ & ~nRD),
 
 	.vid_addr1(vram_addr1),
 	.vid_addr2(vram_addr2),
 	.vid_data1(vram_dout1),
 	.vid_data2(vram_dout2),
-
-	.misc_addr(ioctl_addr),
-	.misc_din(ioctl_dout),
-	.misc_dout(),
-	.misc_rd(0),
-	.misc_we(ioctl_wr && ioctl_index),
-	.misc_busy()
+	.vid_rd(vram_rd)
 );
 
 reg [7:0] bios_dout;
@@ -456,8 +449,6 @@ always @(posedge clk_sys) bios_dout <= bios[{addr[15], addr[13:0]}];
 //////////////////////  EXT.RAM  ////////////////////
 reg  [7:0] ext_c;
 reg  [7:0] ext_d;
-wire [8:0] ext_c_off = 9'h40 + ext_c;
-wire [8:0] ext_d_off = 9'h40 + ext_d;
 reg        ext_dis;
 wire       ext_ena   = ~(ext_ram & ext_dis);
 
@@ -652,8 +643,7 @@ sid_top sid
 ////////////////////   VIDEO   ///////////////////
 wire [18:0] vram_addr1;
 wire [18:0] vram_addr2;
-wire        vram_rd1;
-wire        vram_rd2;
+wire        vram_rd;
 wire [15:0] vram_dout1;
 wire [15:0] vram_dout2;
 wire  [7:0] vid_dout;

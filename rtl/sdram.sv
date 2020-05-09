@@ -30,9 +30,8 @@
 module sdram
 (
 	input             init,        // reset to initialize RAM
-	input             clk,         // clock ~100MHz
-                                  //
-                                  // SDRAM_* - signals to the MT48LC16M16 chip
+	input             clk,         // SDRAM clock
+
 	inout  reg [15:0] SDRAM_DQ,    // 16 bit bidirectional data bus
 	output reg [12:0] SDRAM_A,     // 13 bit multiplexed address bus
 	output reg        SDRAM_DQML,  // two byte masks
@@ -56,13 +55,7 @@ module sdram
 	input      [24:0] vid_addr2,
 	output reg [15:0] vid_data1,
 	output reg [15:0] vid_data2,
-
-	input      [24:0] misc_addr,
-	output reg  [7:0] misc_dout,
-	input       [7:0] misc_din,
-	input             misc_rd,
-	input             misc_we,
-	output reg        misc_busy
+	input             vid_rd
 );
 
 assign SDRAM_nCS  = command[3];
@@ -81,7 +74,7 @@ localparam NO_WRITE_BURST      = 1'b1;     // 0= write burst enabled, 1=only sin
 localparam MODE                = {3'b000, NO_WRITE_BURST, OP_MODE, CAS_LATENCY, ACCESS_TYPE, BURST_LENGTH};
 
 localparam sdram_startup_cycles= 14'd12100;// 100us, plus a little more, @ 100MHz
-localparam cycles_per_refresh  = 14'd780;  // (64000*100)/8192-1 Calc'd as (64ms @ 100MHz)/8192 rose
+localparam cycles_per_refresh  = 14'd400;  // approximately half of required period to schedule in advance
 localparam startup_refresh_max = 14'b11111111111111;
 
 // SDRAM commands
@@ -110,13 +103,11 @@ typedef enum
 	STATE_IDLE_4, STATE_IDLE_5, STATE_IDLE_6, STATE_IDLE_7
 } state_t;
 
-reg  [2:0] cli;
-
 always @(posedge clk) begin
 	reg [CAS_LATENCY+1:0] data_ready_delay;
 
-	reg        old_we, old_rd, old_we2, old_rd2;
-	reg [24:0] old_addr1, old_addr2, old_addr3;
+	reg        old_we, old_rd;
+	reg        vid_rd1, vid_rd2;
 	reg  [7:0] save_data;
 	reg        save_we;
 	reg        refresh = 0;
@@ -124,37 +115,26 @@ always @(posedge clk) begin
 	reg [15:0] cache_data;
 	reg [15:0] ram_data;
 	reg [24:0] cache_addr;
+	reg  [1:0] cli;
 
 	state_t state = STATE_STARTUP;
 
+	SDRAM_DQ <= 16'bZZZZZZZZZZZZZZZZ;
+	ram_data <= SDRAM_DQ;
+
 	command <= CMD_NOP;
-	refresh_count  <= refresh_count+1'b1;
+	if(~&refresh_count) refresh_count <= refresh_count+1'b1;
 
 	data_ready_delay <= data_ready_delay >> 1;
-
-	if(data_ready_delay[1]) begin
-		case(cli)
-			0: ram_busy  <= 0;
-			3: misc_busy <= 0;
-			default:;
-		endcase
-	end
-
-	if(data_ready_delay[1]) ram_data <= SDRAM_DQ;
-	
+	if(data_ready_delay[1] && !cli) ram_busy <= 0;
 	if(data_ready_delay[0]) begin
 		case(cli)
-			0: begin dout <= save_addr[0] ?  ram_data[15:8] : ram_data[7:0]; cache_data <= ram_data; end
-			1: vid_data1  <= save_addr[0] ? {ram_data[7:0], ram_data[15:8]} : {ram_data[15:8], ram_data[7:0]};
-			2: vid_data2  <= save_addr[0] ? {ram_data[7:0], ram_data[15:8]} : {ram_data[15:8], ram_data[7:0]};
-			3: misc_dout  <= save_addr[0] ?  ram_data[15:8] : ram_data[7:0];
+			0: begin dout <= save_addr[0] ?  ram_data[15:8] : ram_data[7:0];     cache_data <= ram_data; end
+			1:  vid_data1 <= save_addr[0] ? {ram_data[7:0],   ram_data[15:8]} : {ram_data[15:8], ram_data[7:0]};
+			2:  vid_data2 <= save_addr[0] ? {ram_data[7:0],   ram_data[15:8]} : {ram_data[15:8], ram_data[7:0]};
 			default: ;
 		endcase
 	end
-
-	old_rd2 <= misc_rd;
-	old_we2 <= misc_we;
-	if((~old_we2 & misc_we) | (~old_rd2 & misc_rd)) misc_busy <= 1;
 
 	old_we <= we;
 	old_rd <= rd;
@@ -162,8 +142,6 @@ always @(posedge clk) begin
 		if(~cache_we & ~we & (cache_addr[24:1] == addr[24:1])) dout <= addr[0] ? cache_data[15:8] : cache_data[7:0];
 			else ram_busy <= 1;
 	end
-
-	SDRAM_DQ   <= 16'bZZZZZZZZZZZZZZZZ;
 
 	case(state)
 		STATE_STARTUP: begin
@@ -210,7 +188,7 @@ always @(posedge clk) begin
 			//-- get prepared to accept a new command, and schedule
 			//-- the first refresh cycle
 			//------------------------------------------------------
-			if(!refresh_count) begin
+			if(&refresh_count) begin
 				state   <= STATE_IDLE;
 				refresh_count <= 0;
 			end
@@ -226,51 +204,43 @@ always @(posedge clk) begin
 
 		STATE_IDLE: begin
 			if((~old_we & we) | (~old_rd & rd & ((cache_addr[24:1] != addr[24:1]) | cache_we)) | ram_busy) begin
-				cli      <= 0;
-				save_we  <= we;
-				save_data<= din;
-				save_addr<= addr;
-				SDRAM_A  <= addr[13:1];
-				SDRAM_BA <= addr[24:23];
-				state    <= STATE_OPEN_1;
-				command  <= CMD_ACTIVE;
-				refresh  <= 1;
-				cache_addr <= addr;
-				cache_we <= we;
-			end else if(old_addr1 != vid_addr1) begin
-				old_addr1<= vid_addr1;
-				cli      <= 1;
-				save_we  <= 0;
-				save_data<= 0;
-				save_addr<= vid_addr1;
-				SDRAM_A  <= vid_addr1[13:1];
-				SDRAM_BA <= vid_addr1[24:23];
-				state    <= STATE_OPEN_1;
-				command  <= CMD_ACTIVE;
-			end else if(old_addr2 != vid_addr2) begin
-				old_addr2<= vid_addr2;
-				cli      <= 2;
-				save_we  <= 0;
-				save_data<= 0;
-				save_addr<= vid_addr2;
-				SDRAM_A  <= vid_addr2[13:1];
-				SDRAM_BA <= vid_addr2[24:23];
-				state    <= STATE_OPEN_1;
-				command  <= CMD_ACTIVE;
-			end else if((~old_we2 & misc_we) | (~old_rd2 & misc_rd) | misc_busy) begin
-				cli      <= 3;
-				save_we  <= misc_we;
-				save_data<= misc_din;
-				save_addr<= misc_addr;
-				SDRAM_A  <= misc_addr[13:1];
-				SDRAM_BA <= misc_addr[24:23];
-				state    <= STATE_OPEN_1;
-				command  <= CMD_ACTIVE;
+				cli         <= 0;
+				save_we     <= we;
+				save_data   <= din;
+				save_addr   <= addr;
+				SDRAM_A     <= addr[13:1];
+				SDRAM_BA    <= addr[24:23];
+				state       <= STATE_OPEN_1;
+				command     <= CMD_ACTIVE;
+				cache_addr  <= addr;
+				cache_we    <= we;
+				if(refresh_count > cycles_per_refresh) refresh <= 1;
+			end else if(vid_rd1 != vid_rd) begin
+				cli         <= 1;
+				save_we     <= 0;
+				save_data   <= 0;
+				save_addr   <= vid_addr1;
+				SDRAM_A     <= vid_addr1[13:1];
+				SDRAM_BA    <= vid_addr1[24:23];
+				state       <= STATE_OPEN_1;
+				command     <= CMD_ACTIVE;
+				vid_rd1     <= vid_rd;
+			end else if(vid_rd2 != vid_rd) begin
+				cli         <= 2;
+				save_we     <= 0;
+				save_data   <= 0;
+				save_addr   <= vid_addr2;
+				SDRAM_A     <= vid_addr2[13:1];
+				SDRAM_BA    <= vid_addr2[24:23];
+				state       <= STATE_OPEN_1;
+				command     <= CMD_ACTIVE;
+				vid_rd2     <= vid_rd;
 			end else if(refresh) begin
-				refresh  <= 0;
-				cli      <= 4;
-				state    <= STATE_IDLE_7;
-				command  <= CMD_AUTO_REFRESH;
+				cli         <= 3;
+				state       <= STATE_IDLE_7;
+				command     <= CMD_AUTO_REFRESH;
+				refresh     <= 0;
+				refresh_count <= 0;
 			end
 		end
 
@@ -289,8 +259,7 @@ always @(posedge clk) begin
 			state       <= STATE_IDLE_2;
 			command     <= CMD_WRITE;
 			SDRAM_DQ    <= {save_data, save_data};
-			if(cli == 3) misc_busy <= 0;
-			if(cli == 0) ram_busy  <= 0;
+			if(!cli) ram_busy <= 0;
 		end
 	endcase
 

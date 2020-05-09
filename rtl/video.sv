@@ -49,6 +49,7 @@ module video
 	output [18:0] vram_addr2,
 	input  [15:0] vram_dout1,
 	input  [15:0] vram_dout2,
+	output reg    vram_rd,
 
 	// Misc. signals
 	input   [3:0] border_color,
@@ -152,6 +153,7 @@ always @(posedge clk_sys) begin
 		if((hc>=128) & (vc<192) & !hc[2:0]) begin
 			fetch <= ~soff;
 			if(~soff) begin
+				vram_rd <= ~vram_rd;
 				case(mode)
 					0: {vaddr1,vaddr2} <= { {page, 1'b0, vc[7:6],vc[2:0],vc[5:3],col}, {page, 4'b0110,vc[7:3],col}     };
 					1: {vaddr1,vaddr2} <= { {page, 1'b0, vc[7:0],col},                 {page, 1'b1, vc[7:0],col}       };
