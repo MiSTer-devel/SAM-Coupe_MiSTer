@@ -138,9 +138,8 @@ assign CLK_VIDEO = clk_sys;
 assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = 0;
 assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 
-assign VIDEO_ARX = status[4:3] ? 8'd16 : 8'd4;
-assign VIDEO_ARY = status[4:3] ? 8'd9  : 8'd3;
-
+assign VIDEO_ARX = status[4] ? 8'd16 : status[3] ? 8'd4 : 8'd5;
+assign VIDEO_ARY = status[4] ? 8'd9  : status[3] ? 8'd3 : 8'd4;
 
 `include "build_id.v"
 localparam CONF_STR = 
@@ -150,7 +149,7 @@ localparam CONF_STR =
 	"S0,DSKMGTIMG,Drive 1;",
 	"S1,DSKMGTIMG,Drive 2;",
 	"-;",
-	"O34,Aspect ratio,Original,Wide,Zoom;",
+	"O34,Border,Large,Small,Wide;",
 	"O12,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%;",
 	"-;",
 	"O67,Stereo mix,none,25%,50%,100%;",
@@ -663,7 +662,7 @@ video video
 	.full_zx(status[12:11] == 1),
 	.hq2x(scale==1),
 	.scandoubler(scale || forced_scandoubler),
-	.wide(status[4]),
+	.border_sz(status[4:3]),
 	.din(cpu_dout),
 	.dout(vid_dout),
 	.dout_en(vid_sel)

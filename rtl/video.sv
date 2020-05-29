@@ -61,7 +61,7 @@ module video
 	input   [1:0] mode3_hi,
 	input         midi_tx,
 	input         full_zx,
-	input         wide,
+	input   [1:0] border_sz,
 
 	// Video outputs
 	output  [7:0] VGA_R,
@@ -103,9 +103,9 @@ reg mode512;
 
 always @(posedge clk_sys) begin
 	reg m512;
-
-	INT_line  <= (hc >= 4) & (hc<132) & (INT_line_no < 192) & (INT_line_no == vc);
-	INT_frame <= (hc >= 4) & (hc<132) & (vc == 244);
+	
+	INT_line  <= (hc >= 3) & (hc<132) & (INT_line_no < 192) & (INT_line_no == vc);
+	INT_frame <= (hc >= 3) & (hc<132) & (vc == 244);
 
 	if(ce_6mp) begin
 		if((vc<192) || (hc<256)) m512 <= (m512 | (mode == 2));
@@ -127,19 +127,35 @@ always @(posedge clk_sys) begin
 		if(mode == 2) shift <= shift << 2;
 	end
 	if(ce_6mn) begin
-		if(hc == 32)  HBlank <= 1;
-		if(hc == 48)  begin
+		if(hc == 51)  begin
 			HSync  <= 1;
 			if( vc == 240) VSync <= 1;
 			if( vc == 244) VSync <= 0;
 		end
 		if(hc == 80)  HSync  <= 0;
-		if(hc == 112) HBlank <= 0;
 
-		if(hc == 108) begin
-			if(vc == 236) VBlank <= 1;
-			if(vc == 260) VBlank <= 0;
-			if(wide) VBlank <= !(vc < 193 || vc >= (311-4));
+		if(!border_sz[0]) begin
+			if(hc == 44)  HBlank <= 1;
+			if(hc == 100) HBlank <= 0;
+		end
+		else begin
+			if(hc == 32)  HBlank <= 1;
+			if(hc == 112) HBlank <= 0;
+		end
+
+		if(hc == 100) begin
+			if(!border_sz) begin
+				if(vc == 226) VBlank <= 1;
+				if(vc == 274) VBlank <= 0;
+			end
+			else if(border_sz[0]) begin
+				if(vc == 210) VBlank <= 1;
+				if(vc == 290) VBlank <= 0;
+			end
+			else begin
+				if(vc == 192) VBlank <= 1;
+				if(vc == 0)   VBlank <= 0;
+			end
 		end
 
 		case(mode)
