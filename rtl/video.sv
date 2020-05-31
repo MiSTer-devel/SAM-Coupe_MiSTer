@@ -52,7 +52,6 @@ module video
 	output reg    vram_rd,
 
 	// Misc. signals
-	input   [3:0] border_color,
 	input         hq2x,
 	input         scandoubler,
 	inout  [21:0] gamma_bus,
@@ -236,26 +235,27 @@ reg  [6:0] vmpr;
 wire [1:0] mode = vmpr[6:5];
 wire [4:0] page = vmpr[4:0];
 
+reg  [7:0] brdr;
+wire [3:0] border_color = {brdr[5], brdr[2:0]};
+
 wire       vmpr_sel = (addr[7:0] == 252);
 wire       clut_sel = (addr[7:0] == 248);
 wire       lpen_sel = (addr[8:0] == 248);
 wire       hpen_sel = (addr[8:0] == 504);
 wire       intl_sel = (addr[7:0] == 249);
+wire       brdr_sel = (addr[7:0] == 254);
 wire       attr_sel = (addr[7:0] == 255);
 
 reg  [6:0] clut[16], clut_raw[16];
 
 always @(posedge clk_sys) begin
-	reg old_we;
-	if(reset) begin
-		vmpr <= 0;
-		clut_raw <= '{default:0}; //hide the garbage (and reset screen, alas)
-	end else begin
-		old_we <= port_we;
-		if(~old_we & port_we) begin
+	if(reset) vmpr <= 0;
+	else begin
+		if(port_we) begin
 			if(vmpr_sel) vmpr <= din[6:0];
 			if(clut_sel) clut_raw[addr[11:8]] <= din[6:0];
 			if(intl_sel) INT_line_no <= din;
+			if(brdr_sel) brdr <= din;
 		end
 	end
 end

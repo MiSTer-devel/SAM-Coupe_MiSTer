@@ -468,7 +468,6 @@ end
 
 ////////////////////  ASIC PORTS  ///////////////////
 reg  [7:0] brdr;
-wire [3:0] border_color = {brdr[5], brdr[2:0]};
 wire       ear_out  = brdr[4];
 wire       mic_out  = 0; // brdr[3]; it seems not used in SAM Coupe.
 
@@ -647,7 +646,7 @@ wire [15:0] vram_dout1;
 wire [15:0] vram_dout2;
 wire  [7:0] vid_dout;
 wire        vid_sel;
-wire        soff = (brdr[7] & video_mode[1]) | turbo_boot;
+wire        soff = (brdr[7] & video_mode[1]) | (turbo_boot & ~reset);
 wire        INT_line;
 wire        INT_frame;
 wire        mem_contention;
