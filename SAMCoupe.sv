@@ -39,8 +39,9 @@ module emu
 	output        CE_PIXEL,
 
 	//Video aspect ratio for HDMI. Most retro systems have ratio 4:3.
-	output [11:0] VIDEO_ARX,
-	output [11:0] VIDEO_ARY,
+	//if VIDEO_ARX[12] or VIDEO_ARY[12] is set then [11:0] contains scaled size instead of aspect ratio.
+	output [12:0] VIDEO_ARX,
+	output [12:0] VIDEO_ARY,
 
 	output  [7:0] VGA_R,
 	output  [7:0] VGA_G,
@@ -51,6 +52,9 @@ module emu
 	output        VGA_F1,
 	output [1:0]  VGA_SL,
 	output        VGA_SCALER, // Force VGA scaler
+
+	input  [11:0] HDMI_WIDTH,
+	input  [11:0] HDMI_HEIGHT,
 
 `ifdef USE_FB
 	// Use framebuffer in DDRAM (USE_FB=1 in qsf)
@@ -185,11 +189,6 @@ assign CLK_VIDEO = clk_sys;
 assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = 0;
 assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 
-wire [1:0] ar = status[14:13];
-
-assign VIDEO_ARX = (!ar) ? (status[4] ? 8'd16 : status[3] ? 8'd4 : 8'd5) : (ar - 1'd1);
-assign VIDEO_ARY = (!ar) ? (status[4] ? 8'd9  : status[3] ? 8'd3 : 8'd4) : 12'd0;
-
 `include "build_id.v"
 localparam CONF_STR = 
 {
@@ -198,9 +197,11 @@ localparam CONF_STR =
 	"S0,DSKMGTIMG,Drive 1;",
 	"S1,DSKMGTIMG,Drive 2;",
 	"-;",
-	"O34,Border,Large,Small,Wide;",
 	"ODE,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"O12,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%;",
+	"-;",
+	"d1OF,Vertical Crop,No,Yes;",
+	"OGH,Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
 	"-;",
 	"O67,Stereo mix,none,25%,50%,100%;",
 	"-;",
@@ -377,6 +378,7 @@ hps_io #(.STRLEN($size(CONF_STR)>>3), .VDNUM(2)) hps_io
 	.forced_scandoubler(forced_scandoubler),
 	.gamma_bus(gamma_bus),
 	.status(status),
+	.status_menumask({|vcrop,1'b0}),
 
 	.sd_lba(sd_lba),
 	.sd_rd(sd_rd),
@@ -707,11 +709,10 @@ wire  [1:0] scale = status[2:1];
 video video
 (
 	.*,
-	.ce_pix(CE_PIXEL),
+	.VGA_DE(vga_de),
 	.full_zx(status[12:11] == 1),
 	.hq2x(scale==1),
 	.scandoubler(scale || forced_scandoubler),
-	.border_sz(status[4:3]),
 	.din(cpu_dout),
 	.dout(vid_dout),
 	.dout_en(vid_sel)
@@ -719,6 +720,36 @@ video video
 
 assign VGA_SL = scale ? scale - 1'd1 : 2'd0;
 assign VGA_F1 = 0;
+
+reg [9:0] vcrop;
+reg       crop;
+always @(posedge CLK_VIDEO) begin
+	vcrop <= 0;
+	crop <= 0;
+	if(HDMI_WIDTH >= (HDMI_HEIGHT + HDMI_HEIGHT[11:1]) && !forced_scandoubler && !scale) begin
+		if(HDMI_HEIGHT == 480)  vcrop <= 240;
+		if(HDMI_HEIGHT == 600)  begin vcrop <= 200; crop <= vcrop_en; end
+		if(HDMI_HEIGHT == 720)  vcrop <= 240;
+		if(HDMI_HEIGHT == 768)  vcrop <= 256;
+		if(HDMI_HEIGHT == 800)  begin vcrop <= 200; crop <= vcrop_en; end
+		if(HDMI_HEIGHT == 1080) vcrop <= 216;
+		if(HDMI_HEIGHT == 1200) vcrop <= 240;
+	end
+end
+
+wire [1:0] ar = status[14:13];
+wire vcrop_en = status[15];
+wire vga_de;
+video_freak video_freak
+(
+	.*,
+	.VGA_DE_IN(vga_de),
+	.ARX((!ar) ? (crop ? 12'd4 : 12'd5) : (ar - 1'd1)),
+	.ARY((!ar) ? 12'd4 : 12'd0),
+	.CROP_SIZE(vcrop_en ? vcrop : 10'd0),
+	.CROP_OFF(0),
+	.SCALE(status[17:16])
+);
 
 ////////////////////   HID   /////////////////////
 wire [11:1] Fn;
@@ -746,7 +777,6 @@ end
 
 assign sd_buff_din = fdd_num ? fdd2_buf_dout : fdd1_buf_dout;
 assign sd_lba      = fdd_num ? fdd2_lba      : fdd1_lba;
-
 
 
 // FDD1

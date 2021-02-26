@@ -25,11 +25,12 @@ module video
 (
 	input         reset,
 
-	input         clk_sys,	// master clock
+	input         CLK_VIDEO,	// master clock
+	output        CE_PIXEL,
+
 	input         ce_6mp,
 	input         ce_6mn,
 	input         ce_24m,
-	output        ce_pix,
 
 	// CPU interfacing
 	input  [15:0] addr,
@@ -60,7 +61,7 @@ module video
 	input   [1:0] mode3_hi,
 	input         midi_tx,
 	input         full_zx,
-	input   [1:0] border_sz,
+	input         crop,
 
 	// Video outputs
 	output  [7:0] VGA_R,
@@ -100,14 +101,14 @@ reg  [3:0] border;
 
 reg mode512;
 
-always @(posedge clk_sys) begin
+always @(posedge CLK_VIDEO) begin
 	reg m512;
 	
 	INT_line  <= (hc >= 3) & (hc<132) & (INT_line_no < 192) & (INT_line_no == vc);
 	INT_frame <= (hc >= 3) & (hc<132) & (vc == 244);
 
 	if(ce_6mp) begin
-		if((vc<192) || (hc<256)) m512 <= (m512 | (mode == 2));
+		if(~HBlank && ~VBlank) m512 <= (m512 | (mode == 2));
 		if (hc==383) begin
 			hc <= 0;
 			if (vc == 311) begin 
@@ -117,7 +118,7 @@ always @(posedge clk_sys) begin
 				vc <= vc + 1'd1;
 			end
 			if( vc == 240) begin
-				mode512 <= m512 | ~hq2x;
+				mode512 <= m512; // | ~hq2x;
 				m512 <= 0;
 			end
 		end else begin
@@ -133,28 +134,18 @@ always @(posedge clk_sys) begin
 		end
 		if(hc == 80)  HSync  <= 0;
 
-		if(!border_sz[0]) begin
+		if(crop) begin
+			if(hc == 13)  HBlank <= 1;
+			if(hc == 131) HBlank <= 0;
+		end
+		else begin
 			if(hc == 44)  HBlank <= 1;
 			if(hc == 100) HBlank <= 0;
 		end
-		else begin
-			if(hc == 32)  HBlank <= 1;
-			if(hc == 112) HBlank <= 0;
-		end
 
 		if(hc == 100) begin
-			if(!border_sz) begin
-				if(vc == 226) VBlank <= 1;
-				if(vc == 274) VBlank <= 0;
-			end
-			else if(border_sz[0]) begin
-				if(vc == 210) VBlank <= 1;
-				if(vc == 290) VBlank <= 0;
-			end
-			else begin
-				if(vc == 192) VBlank <= 1;
-				if(vc == 0)   VBlank <= 0;
-			end
+			if(vc == 226) VBlank <= 1;
+			if(vc == 274) VBlank <= 0;
 		end
 
 		case(mode)
@@ -212,13 +203,7 @@ assign {G[1],R[1],B[1],I,G[0],R[0],B[0]} = soff ? 7'b0 : clut[index];
 video_mixer #(.LINE_LENGTH(768), .HALF_DEPTH(1), .GAMMA(1)) video_mixer
 (
 	.*,
-	.clk_vid(clk_sys),
 	.ce_pix(ce_6mp | (mode512 & ce_6mn)),
-	.ce_pix_out(ce_pix),
-
-	.scanlines(0),
-	.mono(0),
-
 	.R({R, R[1], I}),
 	.G({G, G[1], I}),
 	.B({B, B[1], I})
@@ -248,7 +233,7 @@ wire       attr_sel = (addr[7:0] == 255);
 
 reg  [6:0] clut[16], clut_raw[16];
 
-always @(posedge clk_sys) begin
+always @(posedge CLK_VIDEO) begin
 	if(reset) vmpr <= 0;
 	else begin
 		if(port_we) begin
