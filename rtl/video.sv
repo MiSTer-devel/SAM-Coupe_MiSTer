@@ -204,6 +204,8 @@ video_mixer #(.LINE_LENGTH(768), .HALF_DEPTH(1), .GAMMA(1)) video_mixer
 (
 	.*,
 	.ce_pix(ce_6mp | (mode512 & ce_6mn)),
+	.HDMI_FREEZE(),
+	.freeze_sync(),
 	.R({R, R[1], I}),
 	.G({G, G[1], I}),
 	.B({B, B[1], I})
